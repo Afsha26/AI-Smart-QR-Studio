@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <meta name="description" content="Studio — design, preview and download QR codes with AI assistance">
+    <title>Studio — AI Smart QR Studio</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/studio.css">
+  </head>
+  <body>
+    <header class="site-header" role="banner">
+      <nav class="nav sticky" role="navigation" aria-label="Main navigation">
+        <div class="nav-inner container">
+          <a class="logo" href="index.html" aria-label="AI Smart QR Studio">
+            <img src="../images/AI_Smart_QR_Studio_logo.png" alt="AI Smart QR Studio logo" class="brand-logo">
+            <span>AI Smart QR Studio</span>
+          </a>
+          <button class="nav-toggle" aria-controls="primary-menu" aria-expanded="false">Menu</button>
+          <ul id="primary-menu" class="nav-list">
+            <li><a href="index.html">Home</a></li>
+            <li><a href="#studio-main">Studio</a></li>
+            <li><a href="#history">History</a></li>
+          </ul>
+        </div>
+      </nav>
+    </header>
+
+    <main id="studio-main" class="studio" role="main">
+      <div class="container studio-grid">
+        <!-- Left panel: controls -->
+        <aside class="studio-panel" aria-labelledby="controls-heading">
+          <h2 id="controls-heading">Create QR Code</h2>
+
+          <form id="qr-form" aria-describedby="form-desc">
+            <p id="form-desc" class="sr-only">Select QR type and provide content. Use AI to help generate content, then customize design and download.</p>
+
+            <div class="form-group">
+              <label for="qr-type">QR Type</label>
+              <select id="qr-type" name="type" required>
+                <option value="url">URL</option>
+                <option value="text">Text</option>
+                <option value="email">Email</option>
+                <option value="phone">Phone</option>
+                <option value="sms">SMS</option>
+                <option value="wifi">WiFi</option>
+                <option value="whatsapp">WhatsApp</option>
+                <option value="maps">Google Maps</option>
+                <option value="contact">Contact (vCard)</option>
+                <option value="social">Social Links</option>
+              </select>
+            </div>
+
+            <div id="dynamic-fields" class="form-group" aria-live="polite">
+              <!-- Placeholder for type-specific input fields (populated by JS) -->
+              <label for="content">Content</label>
+              <textarea id="content" name="content" rows="4" placeholder="Enter URL, text or contact details here"></textarea>
+            </div>
+
+            <div class="form-group">
+              <label for="ai-prompt">AI Prompt</label>
+              <textarea id="ai-prompt" name="ai_prompt" rows="3" placeholder="Describe the tone, audience, or content you want the AI to generate"></textarea>
+              <div class="form-actions">
+                <button type="button" id="ai-generate">Generate with AI</button>
+                <button type="button" id="ai-theme">Suggest Theme</button>
+              </div>
+            </div>
+
+            <fieldset class="form-group">
+              <legend>Design & Customization</legend>
+
+              <div class="control-row">
+                <label for="fg-color">Foreground</label>
+                <input id="fg-color" name="fg_color" type="color" value="#000000">
+                <label for="bg-color">Background</label>
+                <input id="bg-color" name="bg_color" type="color" value="#ffffff">
+              </div>
+
+              <div class="control-row">
+                <label for="gradient">Gradient</label>
+                <select id="gradient" name="gradient">
+                  <option value="none">None</option>
+                  <option value="linear">Linear</option>
+                  <option value="radial">Radial</option>
+                </select>
+                <label for="dot-style">Dot Style</label>
+                <select id="dot-style" name="dot_style">
+                  <option value="square">Square</option>
+                  <option value="round">Round</option>
+                  <option value="rounded">Rounded</option>
+                </select>
+              </div>
+
+              <div class="control-row">
+                <label for="eye-style">Eye Style</label>
+                <select id="eye-style" name="eye_style">
+                  <option value="frame">Frame</option>
+                  <option value="rounded">Rounded</option>
+                  <option value="diamond">Diamond</option>
+                </select>
+                <label for="size">Size</label>
+                <input id="size" name="size" type="range" min="128" max="2048" value="512">
+              </div>
+
+              <div class="control-row">
+                <label for="margin">Margin</label>
+                <input id="margin" name="margin" type="number" min="0" max="40" value="8">
+                <label for="ecc">Error Correction</label>
+                <select id="ecc" name="ecc">
+                  <option value="L">L - Low (7%)</option>
+                  <option value="M">M - Medium (15%)</option>
+                  <option value="Q">Q - Quartile (25%)</option>
+                  <option value="H">H - High (30%)</option>
+                </select>
+              </div>
+            </fieldset>
+
+            <div class="form-group">
+              <label for="logo-upload">Upload Logo</label>
+              <input id="logo-upload" name="logo" type="file" accept="image/*">
+              <div id="logo-preview" aria-hidden="true">No logo uploaded</div>
+            </div>
+
+            <div class="form-actions">
+              <button type="button" id="preview-btn">Update Preview</button>
+              <button type="button" id="download-png">Download PNG</button>
+              <button type="button" id="download-svg">Download SVG</button>
+            </div>
+          </form>
+        </aside>
+
+        <!-- Right panel: preview & cards -->
+        <section class="studio-preview" aria-labelledby="preview-heading">
+          <h2 id="preview-heading">Live Preview</h2>
+
+          <div id="qr-preview" role="region" aria-label="QR code preview area">
+            <!-- QR canvas or image injected here by JS -->
+            <div class="qr-canvas-placeholder">QR preview will appear here</div>
+          </div>
+
+          <div class="cards">
+            <article class="card" id="validation-card" aria-labelledby="validation-heading">
+              <h3 id="validation-heading">Validation</h3>
+              <p id="validation-status">URL validation and content checks will appear here.</p>
+              <ul id="validation-list" aria-live="polite"></ul>
+            </article>
+
+            <article class="card" id="quality-card" aria-labelledby="quality-heading">
+              <h3 id="quality-heading">Scan Quality</h3>
+              <ul>
+                <li id="quality-contrast">Contrast: <span class="muted">—</span></li>
+                <li id="quality-size">Module size: <span class="muted">—</span></li>
+                <li id="quality-logo">Logo impact: <span class="muted">—</span></li>
+              </ul>
+            </article>
+
+            <article class="card" id="ai-card" aria-labelledby="ai-suggestions">
+              <h3 id="ai-suggestions">AI Suggestions</h3>
+              <div id="ai-suggestion-list">AI-generated title, tagline and CTA will show here.</div>
+              <div class="card-actions">
+                <button type="button" id="apply-theme">Apply Theme</button>
+              </div>
+            </article>
+          </div>
+        </section>
+      </div>
+
+      <!-- Bottom area: history and scanner -->
+      <section id="history" class="studio-bottom container" aria-labelledby="history-heading">
+        <h2 id="history-heading">History</h2>
+        <p class="muted">Saved designs are stored locally in your browser.</p>
+        <ul id="history-list" aria-live="polite">
+          <!-- History items injected here -->
+        </ul>
+      </section>
+
+      <section id="scanner" class="studio-bottom container" aria-labelledby="scanner-heading">
+        <h2 id="scanner-heading">QR Scanner</h2>
+        <p class="muted">Use your device camera to scan codes in the studio.</p>
+        <div class="scanner-grid">
+          <video id="scanner-video" autoplay playsinline muted></video>
+          <canvas id="scanner-canvas" hidden></canvas>
+          <div id="scanner-result" aria-live="polite">No scan yet.</div>
+        </div>
+      </section>
+
+    </main>
+
+    <footer role="contentinfo">
+      <div class="container">
+        <p>&copy; AI Smart QR Studio</p>
+      </div>
+    </footer>
+    <script src="js/app.js" defer></script>
+    <script src="js/qrcode-loader.js" defer></script>
+  </body>
+</html>
