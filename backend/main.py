@@ -19,7 +19,7 @@ from fastapi.exceptions import RequestValidationError
 from dotenv import load_dotenv
 
 # Load .env into environment early
-load_dotenv()
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '.env'))
 
 LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO')
 logging.basicConfig(level=LOG_LEVEL)
