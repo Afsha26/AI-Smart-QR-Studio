@@ -1,4 +1,4 @@
-// QR generator module using QRCode.js
+// QR generator module migrated to `qr-code-styling`
 // Exports: QRGenerator class and a default `init` helper
 
 class QRGenerator {
@@ -8,7 +8,8 @@ class QRGenerator {
     this.previewPlaceholder = options.previewPlaceholder || '.qr-canvas-placeholder';
     this.debounceMs = options.debounceMs || 250;
     this.size = Number(options.size) || 512;
-    this.qrcode = null;
+    // instance of QRCodeStyling
+    this.qrCode = null;
     this.logoDataUrl = null;
     this._debounceTimer = null;
 
@@ -22,6 +23,10 @@ class QRGenerator {
 
     this._bindElements();
     this._attachEvents();
+
+    // create a container for the QR canvas/SVG and append QRCodeStyling once
+    this._createPreviewContainer();
+
     // initial render
     this.generate();
   }
@@ -33,6 +38,9 @@ class QRGenerator {
     this.sizeEl = f.querySelector('#size');
     this.fgColorEl = f.querySelector('#fg-color');
     this.bgColorEl = f.querySelector('#bg-color');
+    this.gradientEl = f.querySelector('#gradient');
+    this.dotStyleEl = f.querySelector('#dot-style');
+    this.eyeStyleEl = f.querySelector('#eye-style');
     this.marginEl = f.querySelector('#margin');
     this.eccEl = f.querySelector('#ecc');
     this.logoInput = f.querySelector('#logo-upload');
@@ -172,24 +180,83 @@ class QRGenerator {
         return content;
     }
   }
-
-  // Map ECC letter to library constant
+  // Map ECC letter to string acceptable by qr-code-styling
   _getCorrectLevel(eccValue) {
-    if (!window.QRCode || !window.QRCode.CorrectLevel) return undefined;
     const m = (eccValue || 'M').toUpperCase();
-    switch (m) {
-      case 'L': return QRCode.CorrectLevel.L;
-      case 'M': return QRCode.CorrectLevel.M;
-      case 'Q': return QRCode.CorrectLevel.Q;
-      case 'H': return QRCode.CorrectLevel.H;
-      default: return QRCode.CorrectLevel.M;
+    if (['L','M','Q','H'].includes(m)) return m;
+    return 'M';
+  }
+
+  // Create a container inside previewEl and append QRCodeStyling instance once
+  _createPreviewContainer(){
+    // keep existing previewEl but create an inner wrapper to attach QR output
+    this.previewContainer = document.createElement('div');
+    this.previewContainer.className = 'qr-canvas-container';
+    this.previewContainer.style.display = 'flex';
+    this.previewContainer.style.justifyContent = 'center';
+    this.previewContainer.style.alignItems = 'center';
+    this.previewEl.innerHTML = '';
+    this.previewEl.appendChild(this.previewContainer);
+
+    // if QRCodeStyling already created earlier, append it; otherwise it will be appended on first generate
+    if (this.qrCode && typeof this.qrCode.append === 'function'){
+      this.qrCode.append(this.previewContainer);
     }
   }
 
-  // Generate QR using QRCode.js and then composite logo if present
+  // Map UI-selected dot style to QRCodeStyling `dotsOptions.type`
+  _mapDotType(val){
+    switch((val||'square').toLowerCase()){
+      case 'square': return 'square';
+      case 'round': return 'rounded';
+      case 'rounded': return 'rounded';
+      case 'dots': return 'dots';
+      case 'diamond': return 'diamond';
+      case 'classy': return 'classy';
+      case 'classy-rounded': return 'classy-rounded';
+      default: return 'square';
+    }
+  }
+
+  // Map UI-selected eye style to cornersSquareOptions.type
+  _mapEyeType(val){
+    switch((val||'frame').toLowerCase()){
+      case 'frame': return 'square';
+      case 'rounded': return 'rounded';
+      case 'diamond': return 'extra-rounded';
+      case 'classy': return 'classy';
+      case 'classy-rounded': return 'classy-rounded';
+      default: return 'square';
+    }
+  }
+
+  // Helper: create a simple linear gradient between fg and a darker shade
+  _buildGradient(type, fg){
+    if(!type || type === 'none') return fg;
+    // compute a slightly darker color for stop2
+    const darker = this._darkenHex(fg, 0.18);
+    const stops = [{offset:0, color: fg},{offset:1, color: darker}];
+    return {type: type === 'radial' ? 'radial' : 'linear', rotation: 0, colorStops: stops};
+  }
+
+  _darkenHex(hex, amount){
+    try{
+      const c = hex.replace('#','');
+      const num = parseInt(c,16);
+      let r = (num >> 16) & 0xFF;
+      let g = (num >> 8) & 0xFF;
+      let b = num & 0xFF;
+      r = Math.max(0, Math.floor(r * (1 - amount)));
+      g = Math.max(0, Math.floor(g * (1 - amount)));
+      b = Math.max(0, Math.floor(b * (1 - amount)));
+      return '#'+((1<<24) + (r<<16) + (g<<8) + b).toString(16).slice(1);
+    }catch(e){ return hex; }
+  }
+
+  // Generate or update the QR using QRCodeStyling
   generate() {
-    if (!window.QRCode) {
-      console.warn('QRCode.js not found. Include QRCode.js before using qr.js');
+    if (!window.QRCodeStyling) {
+      console.warn('qr-code-styling not found. Include QRCodeStyling before using qr.js');
       return;
     }
 
@@ -199,199 +266,79 @@ class QRGenerator {
     const bg = (this.bgColorEl && this.bgColorEl.value) || '#ffffff';
     const margin = Number((this.marginEl && this.marginEl.value) || 8);
     const ecc = (this.eccEl && this.eccEl.value) || 'M';
+    const gradient = (this.gradientEl && this.gradientEl.value) || 'none';
+    const dotStyle = (this.dotStyleEl && this.dotStyleEl.value) || 'square';
+    const eyeStyle = (this.eyeStyleEl && this.eyeStyleEl.value) || 'frame';
 
-    // Clear preview
-    this.previewEl.innerHTML = '';
-
-    // Create QRCode instance
-    try {
-      this.qrcode = new QRCode(this.previewEl, {
-        text: payload,
-        width: size,
-        height: size,
-        colorDark: fg,
-        colorLight: bg,
-        correctLevel: this._getCorrectLevel(ecc),
-      });
-    } catch (err) {
-      // Some forks require using makeCode after new QRCode(element)
-      this.qrcode = new QRCode(this.previewEl, { width: size, height: size });
-      if (typeof this.qrcode.clear === 'function') this.qrcode.clear();
-      if (typeof this.qrcode.makeCode === 'function') this.qrcode.makeCode(payload);
-    }
-
-    // After a short delay, composite logo if present
-    setTimeout(() => {
-      this._compositeLogoIfNeeded();
-      this._onGenerated();
-    }, 50);
-  }
-
-  async _compositeLogoIfNeeded() {
-    if (!this.logoDataUrl) return; // nothing to composite
-
-    // Get rendered image (img or canvas) inside preview
-    const img = this.previewEl.querySelector('img');
-    const canvas = this.previewEl.querySelector('canvas');
-    const svg = this.previewEl.querySelector('svg');
-
-    let baseImg;
-    let w = Number((this.sizeEl && this.sizeEl.value) || this.size) || this.size;
-    let h = w;
-
-    if (canvas) {
-      // draw logo onto existing canvas
-      const ctx = canvas.getContext('2d');
-      const logo = await this._loadImage(this.logoDataUrl);
-      const scale = Math.max(0.12, Math.min(0.25, 256 / w));
-      const logoW = Math.floor(w * scale);
-      const logoH = Math.floor((logo.height / logo.width) * logoW);
-      const dx = Math.floor((w - logoW) / 2);
-      const dy = Math.floor((h - logoH) / 2);
-      ctx.drawImage(logo, dx, dy, logoW, logoH);
-      return;
-    }
-
-    if (img) {
-      baseImg = img;
-    } else if (svg) {
-      // serialize svg to data URL
-      const svgStr = new XMLSerializer().serializeToString(svg);
-      const svg64 = btoa(unescape(encodeURIComponent(svgStr)));
-      const dataUrl = 'data:image/svg+xml;base64,' + svg64;
-      baseImg = await this._loadImage(dataUrl);
-    } else {
-      // nothing we can composite
-      return;
-    }
-
-    // Create canvas and composite
-    const out = document.createElement('canvas');
-    out.width = w;
-    out.height = h;
-    const ctx = out.getContext('2d');
-    // draw base QR
-    await new Promise((res) => {
-      if (baseImg.complete) {
-        ctx.drawImage(baseImg, 0, 0, w, h);
-        res();
-      } else {
-        baseImg.onload = () => {
-          ctx.drawImage(baseImg, 0, 0, w, h);
-          res();
-        };
-        baseImg.onerror = res;
+    // build options object for QRCodeStyling
+    const opts = {
+      width: size,
+      height: size,
+      data: payload,
+      image: this.logoDataUrl || undefined,
+      margin: margin,
+      qrOptions: { errorCorrectionLevel: this._getCorrectLevel(ecc) },
+      backgroundOptions: { color: bg },
+      dotsOptions: {
+        color: this._buildGradient(gradient, fg),
+        type: this._mapDotType(dotStyle)
+      },
+      cornersSquareOptions: {
+        type: this._mapEyeType(eyeStyle),
+        color: fg
+      },
+      cornersDotOptions: {
+        type: 'dot',
+        color: fg
+      },
+      imageOptions: {
+        crossOrigin: 'anonymous',
+        imageSize: 0.18, // image occupies ~18% width
+        margin: 5
       }
-    });
+    };
 
-    // draw logo
-    const logo = await this._loadImage(this.logoDataUrl);
-    const scale = 0.18; // logo occupies ~18% of QR width
-    const logoW = Math.floor(w * scale);
-    const logoH = Math.floor((logo.height / logo.width) * logoW);
-    const dx = Math.floor((w - logoW) / 2);
-    const dy = Math.floor((h - logoH) / 2);
-    // optional rounded background for logo
-    ctx.save();
-    ctx.fillStyle = '#ffffff';
-    const pad = Math.floor(logoW * 0.12);
-    const rx = dx - pad;
-    const ry = dy - pad;
-    const rw = logoW + pad * 2;
-    const rh = logoH + pad * 2;
-    // rounded rect
-    const r = Math.floor(pad * 0.8);
-    ctx.beginPath();
-    ctx.moveTo(rx + r, ry);
-    ctx.arcTo(rx + rw, ry, rx + rw, ry + rh, r);
-    ctx.arcTo(rx + rw, ry + rh, rx, ry + rh, r);
-    ctx.arcTo(rx, ry + rh, rx, ry, r);
-    ctx.arcTo(rx, ry, rx + rw, ry, r);
-    ctx.closePath();
-    ctx.fill();
-    ctx.drawImage(logo, dx, dy, logoW, logoH);
-    ctx.restore();
+    // If instance exists, update it, otherwise create and append once
+    if (this.qrCode) {
+      try{
+        this.qrCode.update(opts);
+      }catch(e){
+        // fallback: recreate
+        this.qrCode = null;
+      }
+    }
 
-    // replace preview with canvas
-    this.previewEl.innerHTML = '';
-    this.previewEl.appendChild(out);
+    if (!this.qrCode) {
+      // Use global QRCodeStyling exposed by loader
+      this.qrCode = new window.QRCodeStyling(opts);
+      if (!this.previewContainer) this._createPreviewContainer();
+      this.qrCode.append(this.previewContainer);
+    }
+
+    // notify caller
+    this._onGenerated();
   }
 
-  _loadImage(src) {
-    return new Promise((resolve, reject) => {
-      const img = new Image();
-      img.crossOrigin = 'anonymous';
-      img.onload = () => resolve(img);
-      img.onerror = (e) => reject(e);
-      img.src = src;
-    });
-  }
-
-  // Download helpers
+  // Download helpers using QRCodeStyling's download API
   async downloadPNG(filename = 'aiqr.png') {
-    // Ensure latest render
-    this.generate();
-    // small delay to ensure canvas available
-    await new Promise((r) => setTimeout(r, 120));
-    const canvas = this.previewEl.querySelector('canvas');
-    if (canvas) {
-      const dataUrl = canvas.toDataURL('image/png');
-      this._triggerDownload(dataUrl, filename);
-      return;
+    if (!this.qrCode) { this.generate(); }
+    const name = (filename || 'aiqr.png').replace(/\.png$/i,'');
+    try{
+      this.qrCode.download({ name, extension: 'png' });
+    }catch(e){
+      // older API signature fallback
+      if(typeof this.qrCode.download === 'function') this.qrCode.download('png');
     }
-
-    const img = this.previewEl.querySelector('img');
-    if (img && img.src) {
-      this._triggerDownload(img.src, filename);
-      return;
-    }
-
-    // fallback: try to serialize svg
-    const svg = this.previewEl.querySelector('svg');
-    if (svg) {
-      const svgStr = new XMLSerializer().serializeToString(svg);
-      const canvas2 = document.createElement('canvas');
-      const size = Number((this.sizeEl && this.sizeEl.value) || this.size) || this.size;
-      canvas2.width = size;
-      canvas2.height = size;
-      const ctx = canvas2.getContext('2d');
-      const imgObj = await this._loadImage('data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgStr));
-      ctx.drawImage(imgObj, 0, 0);
-      const dataUrl = canvas2.toDataURL('image/png');
-      this._triggerDownload(dataUrl, filename);
-      return;
-    }
-
-    console.warn('No renderable QR found to download.');
   }
 
   async downloadSVG(filename = 'aiqr.svg') {
-    // Try to find an existing SVG
-    const svg = this.previewEl.querySelector('svg');
-    if (svg) {
-      const svgStr = new XMLSerializer().serializeToString(svg);
-      const blob = new Blob([svgStr], { type: 'image/svg+xml' });
-      const url = URL.createObjectURL(blob);
-      this._triggerDownload(url, filename, true);
-      setTimeout(() => URL.revokeObjectURL(url), 60000);
-      return;
+    if (!this.qrCode) { this.generate(); }
+    const name = (filename || 'aiqr.svg').replace(/\.svg$/i,'');
+    try{
+      this.qrCode.download({ name, extension: 'svg' });
+    }catch(e){
+      if(typeof this.qrCode.download === 'function') this.qrCode.download('svg');
     }
-
-    // If canvas present, convert to PNG then warn user
-    const canvas = this.previewEl.querySelector('canvas');
-    if (canvas) {
-      // create PNG instead and name .png
-      this.downloadPNG(filename.replace(/\.svg$/i, '.png'));
-      return;
-    }
-
-    const img = this.previewEl.querySelector('img');
-    if (img && img.src && img.src.startsWith('data:image/svg+xml')) {
-      this._triggerDownload(img.src, filename);
-      return;
-    }
-
-    console.warn('No SVG available to download.');
   }
 
   _triggerDownload(dataUrlOrUrl, filename = 'download.png', isObjectUrl = false) {
