@@ -3,6 +3,7 @@
 // Uses async/await and central request helper with timeout and error handling
 
 const DEFAULT_TIMEOUT = 15000; // ms
+const API_BASE = 'http://127.0.0.1:8000';
 
 // Helper: central fetch wrapper with JSON handling, timeout, and errors
 async function request(path, { method = 'GET', body = null, headers = {}, timeout = DEFAULT_TIMEOUT, expectBlob = false } = {}) {
@@ -51,7 +52,7 @@ async function request(path, { method = 'GET', body = null, headers = {}, timeou
 export async function generateAITheme(prompt) {
   if (!prompt) throw new Error('generateAITheme requires a prompt');
   try {
-    const res = await request('/ai/theme', { method: 'POST', body: { prompt } });
+    const res = await request(`${API_BASE}/ai/theme`, { method: 'POST', body: { prompt } });
     return res; // expected: { theme: {...} } or similar
   } catch (err) {
     console.error('generateAITheme error', err);
@@ -64,7 +65,7 @@ export async function generateAITheme(prompt) {
 export async function generateAIContent(prompt, type = 'default') {
   if (!prompt) throw new Error('generateAIContent requires a prompt');
   try {
-    const res = await request('/ai/content', { method: 'POST', body: { prompt, type } });
+    const res = await request(`${API_BASE}/ai/content`, { method: 'POST', body: { prompt, type } });
     return res; // expected: { title, tagline, cta, content }
   } catch (err) {
     console.error('generateAIContent error', err);
@@ -73,14 +74,14 @@ export async function generateAIContent(prompt, type = 'default') {
 }
 
 // validateURL: validate and sanitize a URL using backend rules
-// POST /validator/url { url }
+// POST /validator { type, value }
 export async function validateURL(url) {
   if (!url) throw new Error('validateURL requires a url');
   try {
-    const res = await request('/validator/url', { method: 'POST', body: { url } });
+    const res = await request(`${API_BASE}/validator`, { method: 'POST', body: { type: 'url', value: url } });
     return res; // expected: { valid: true/false, issues: [...] }
   } catch (err) {
-    console.error('validateURL error', err);
+    console.error('Unable to validate URL.', err);
     throw err;
   }
 }
@@ -90,7 +91,7 @@ export async function validateURL(url) {
 export async function analyzeQR(payload, options = {}) {
   if (payload == null) throw new Error('analyzeQR requires a payload');
   try {
-    const res = await request('/analysis/quality', { method: 'POST', body: { payload, options } });
+    const res = await request(`${API_BASE}/analysis/quality`, { method: 'POST', body: { payload, options } });
     return res; // expected: { contrast, moduleSize, logoImpact, score }
   } catch (err) {
     console.error('analyzeQR error', err);
@@ -106,7 +107,7 @@ export async function downloadQR(payload, format = 'png', options = {}) {
   if (!supported.includes(format)) throw new Error(`Unsupported format ${format}`);
   try {
     // expect a binary response
-    const blob = await request('/download', { method: 'POST', body: { payload, format, options }, expectBlob: true, headers: { Accept: '*/*' } });
+    const blob = await request(`${API_BASE}/download`, { method: 'POST', body: { payload, format, options }, expectBlob: true, headers: { Accept: '*/*' } });
     return blob; // caller can save via URL.createObjectURL or other means
   } catch (err) {
     console.error('downloadQR error', err);

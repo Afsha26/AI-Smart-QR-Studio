@@ -1,6 +1,6 @@
 // QR generator module migrated to `qr-code-styling`
 // Exports: QRGenerator class and a default `init` helper
-
+import { validateURL } from "./api.js";
 class QRGenerator {
   constructor(options = {}) {
     this.formSelector = options.formSelector || '#qr-form';
@@ -254,13 +254,26 @@ class QRGenerator {
   }
 
   // Generate or update the QR using QRCodeStyling
-  generate() {
+  async generate() {
     if (!window.QRCodeStyling) {
       console.warn('qr-code-styling not found. Include QRCodeStyling before using qr.js');
       return;
     }
 
     const payload = this.buildPayload();
+    const type = this.typeEl?.value || "text";
+
+    if (type === "url") {
+        const result = await validateURL(payload);
+
+        if (!result.valid) {
+            alert("Invalid URL");
+
+            console.log(result.issues);
+
+            return;
+        }
+    }
     const size = Number((this.sizeEl && this.sizeEl.value) || this.size) || this.size;
     const fg = (this.fgColorEl && this.fgColorEl.value) || '#000000';
     const bg = (this.bgColorEl && this.bgColorEl.value) || '#ffffff';

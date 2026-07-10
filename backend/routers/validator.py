@@ -6,18 +6,20 @@ from backend.services.validator_service import validate_url as svc_validate_url
 router = APIRouter()
 
 
-class URLIn(BaseModel):
-    url: str
+class ValidationRequest(BaseModel):
+    type: str
+    value: str
 
 
-@router.post('/url')
-async def url_validator(payload: URLIn):
+@router.post('/')
+async def validator(payload: ValidationRequest):
     """Validate and sanitize a URL using backend rules.
 
     Business rules live in `backend.services.validator_service`.
     """
     try:
-        result = await svc_validate_url(payload.url)
-        return result
+        if payload.type == "url":
+            result = await svc_validate_url(payload.value)
+            return result
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
