@@ -28,7 +28,11 @@ logger = logging.getLogger('aiqr.backend')
 
 def create_app() -> FastAPI:
     app = FastAPI(title='AI Smart QR — API', version='0.1')
-
+    @app.get("/")
+    async def home():
+        return {
+            "message": "AI Smart QR Backend Running"
+        }
     # Configure CORS
     origins_env = os.getenv('BACKEND_ALLOWED_ORIGINS', '')
     if origins_env:
@@ -77,7 +81,6 @@ def create_app() -> FastAPI:
 
 
 app = create_app()
-
 
 if __name__ == '__main__':
     # Allow running with `python backend/main.py` for quick development

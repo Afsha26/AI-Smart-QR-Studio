@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+
 from backend.services.ai_service import generate_theme as svc_generate_theme, generate_content as svc_generate_content
 
 router = APIRouter()
@@ -9,7 +10,6 @@ router = APIRouter()
 class PromptIn(BaseModel):
     prompt: str
     type: str | None = None
-
 
 @router.post('/theme')
 async def theme(payload: PromptIn):
