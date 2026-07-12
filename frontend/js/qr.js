@@ -1,6 +1,74 @@
 // QR generator module migrated to `qr-code-styling`
 // Exports: QRGenerator class and a default `init` helper
-import { validateURL } from "./api.js";
+import { validateInput } from "./api.js";
+
+const validationMessages = {
+  invalid_url: 'Please enter a valid website URL.',
+  unsupported_scheme: 'Only HTTP and HTTPS links are supported.',
+  local_host: 'Localhost URLs cannot be used in QR codes.',
+  invalid_email: 'Please enter a valid email address.',
+  invalid_phone: 'Please enter a valid phone number.',
+  empty_text: 'Please enter some text.',
+  text_too_long: 'The text is too long for a QR code.',
+  invalid_message: 'Please enter a valid message.',
+  message_too_long: 'The message is too long.',
+  invalid_sms: 'Please enter a valid SMS format.',
+  invalid_whatsapp: 'Please enter a valid WhatsApp number.',
+  invalid_wifi: 'Please check the WiFi configuration.',
+  invalid_wifi_encryption: 'Please choose a supported WiFi encryption type.',
+  invalid_wifi_password: 'Please enter a valid WiFi password.',
+  empty_ssid: 'Please enter a WiFi network name.',
+  invalid_vcard: 'Please enter a valid contact card.',
+  invalid_coordinates: 'Please enter valid latitude and longitude values.',
+  unsupported_platform: 'Please select a supported social media platform.',
+  unsupported_type: 'This QR code type is not supported.',
+  empty_username: 'Please enter a social media username.',
+  invalid_social_username: 'Please enter a valid social media username.',
+  invalid_hostname: 'Please enter a valid website hostname.',
+  invalid_message: 'Please enter a valid message.',
+};
+
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function getValidationMessage(issue) {
+  return validationMessages[issue] || 'An unknown validation error occurred.';
+}
+
+function updateValidationUI(result) {
+  const statusEl = document.getElementById('validation-status');
+  const listEl = document.getElementById('validation-list');
+
+  if (!statusEl || !listEl) return;
+
+  const valid = Boolean(result?.valid);
+  const issues = Array.isArray(result?.issues) ? result.issues.filter(Boolean) : [];
+  const normalized = result?.normalized ?? null;
+
+  statusEl.innerHTML = valid
+    ? '✔ Validation successful.'
+    : '❌ Validation failed.';
+
+  if (normalized != null && normalized !== '') {
+    statusEl.innerHTML += `<br><br>Normalized value:<br>${escapeHtml(normalized)}`;
+  }
+
+  listEl.innerHTML = '';
+  if (!valid) {
+    issues.forEach((issue) => {
+      const li = document.createElement('li');
+      li.textContent = getValidationMessage(issue);
+      listEl.appendChild(li);
+    });
+  }
+}
+
 class QRGenerator {
   constructor(options = {}) {
     this.formSelector = options.formSelector || '#qr-form';
@@ -84,6 +152,65 @@ class QRGenerator {
       this._debounceGenerate();
     };
     reader.readAsDataURL(file);
+  }
+
+  _getValidationType(type) {
+    switch ((type || '').toLowerCase()) {
+      case 'url':
+      case 'maps':
+        return 'url';
+      case 'text':
+        return 'text';
+      case 'email':
+        return 'email';
+      case 'phone':
+        return 'phone';
+      case 'sms':
+        return 'sms';
+      case 'wifi':
+        return 'wifi';
+      case 'whatsapp':
+        return 'whatsapp';
+      case 'contact':
+        return 'vcard';
+      case 'social':
+        return 'social';
+      default:
+        return null;
+    }
+  }
+
+  _getValidationValue(type) {
+    const get = (name) => {
+      const el = this.form.elements[name];
+      if (!el) return null;
+      return el.value;
+    };
+
+    const content = (this.contentEl && this.contentEl.value) || '';
+
+    switch ((type || '').toLowerCase()) {
+      case 'sms': {
+        const number = get('sms_number') || get('phone') || content.trim();
+        const message = get('sms_body') || '';
+        return `${number}|${message}`.trim();
+      }
+      case 'whatsapp': {
+        const number = get('whatsapp_number') || content.trim();
+        const text = get('whatsapp_text') || '';
+        return `${number}|${text}`.trim();
+      }
+      case 'wifi': {
+        const ssid = get('wifi_ssid') || '';
+        const password = get('wifi_password') || '';
+        const encryption = get('wifi_encryption') || get('wifi_type') || 'WPA';
+        return `${ssid}|${password}|${encryption}`;
+      }
+      case 'social':
+        return content.trim();
+      default:
+        return content;
+    }
   }
 
   // Build payload string based on available form fields. Falls back to `#content`.
@@ -262,18 +389,18 @@ class QRGenerator {
 
     const payload = this.buildPayload();
     const type = this.typeEl?.value || "text";
+    const validationType = this._getValidationType(type);
+    const validationValue = validationType ? this._getValidationValue(type) : payload;
 
-    if (type === "url") {
-        const result = await validateURL(payload);
-
-        if (!result.valid) {
-            alert("Invalid URL");
-
-            console.log(result.issues);
-
-            return;
-        }
+    if (validationType) {
+      try {
+        const result = await validateInput(validationType, validationValue);
+        updateValidationUI(result);
+      } catch (error) {
+        updateValidationUI({ valid: false, normalized: null, issues: [error?.message || 'validation_error'] });
+      }
     }
+
     const size = Number((this.sizeEl && this.sizeEl.value) || this.size) || this.size;
     const fg = (this.fgColorEl && this.fgColorEl.value) || '#000000';
     const bg = (this.bgColorEl && this.bgColorEl.value) || '#ffffff';

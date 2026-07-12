@@ -73,17 +73,23 @@ export async function generateAIContent(prompt, type = 'default') {
   }
 }
 
-// validateURL: validate and sanitize a URL using backend rules
+// validateInput: validate a QR payload using the backend dispatcher
 // POST /validator { type, value }
-export async function validateURL(url) {
-  if (!url) throw new Error('validateURL requires a url');
+export async function validateInput(type, value) {
+  if (!type) throw new Error('validateInput requires a qr type');
+  if (value == null) throw new Error('validateInput requires a value');
   try {
-    const res = await request(`${API_BASE}/validator`, { method: 'POST', body: { type: 'url', value: url } });
-    return res; // expected: { valid: true/false, issues: [...] }
+    const res = await request(`${API_BASE}/validator`, { method: 'POST', body: { type, value } });
+    return res; // expected: { valid, normalized, issues }
   } catch (err) {
-    console.error('Unable to validate URL.', err);
+    console.error('Unable to validate input.', err);
     throw err;
   }
+}
+
+// validateURL: validate and sanitize a URL using backend rules
+export async function validateURL(url) {
+  return validateInput('url', url);
 }
 
 // analyzeQR: send QR payload and design options to backend to evaluate scan quality
