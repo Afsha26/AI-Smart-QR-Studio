@@ -15,10 +15,10 @@ class AnalyzeIn(BaseModel):
 async def quality(payload: AnalyzeIn):
     """Analyze QR payload and design options for scan quality.
 
-    Delegates to `backend.services.analysis_service`.
+    The router remains lightweight and delegates all analysis work to the
+    service layer.
     """
     try:
-        result = await svc_analyze_quality(payload.payload, payload.options or {})
-        return result
+        return await svc_analyze_quality(payload.payload, payload.options or {})
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))

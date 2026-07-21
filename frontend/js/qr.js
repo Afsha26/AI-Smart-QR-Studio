@@ -1,6 +1,6 @@
 // QR generator module migrated to `qr-code-styling`
 // Exports: QRGenerator class and a default `init` helper
-import { validateInput } from "./api.js";
+import { analyzeQR, validateInput } from "./api.js";
 
 const validationMessages = {
   invalid_url: 'Please enter a valid website URL.',
@@ -69,6 +69,65 @@ function updateValidationUI(result) {
   }
 }
 
+function updateQualityUI(result) {
+  const contrastEl = document.getElementById('quality-contrast');
+  const sizeEl = document.getElementById('quality-size');
+  const logoEl = document.getElementById('quality-logo');
+  const scoreEl = document.getElementById('quality-score');
+  const recommendationsEl = document.getElementById('quality-recommendations');
+
+  if (!contrastEl || !sizeEl || !logoEl) return;
+
+  if (result?.error) {
+    contrastEl.innerHTML = 'Contrast: <span class="muted">—</span>';
+    sizeEl.innerHTML = 'Module size: <span class="muted">—</span>';
+    logoEl.innerHTML = 'Logo impact: <span class="muted">—</span>';
+    if (scoreEl) {
+      scoreEl.innerHTML = 'Overall Score: <span class="muted">—</span>';
+    }
+    if (recommendationsEl) {
+      recommendationsEl.innerHTML = '';
+      const li = document.createElement('li');
+      li.textContent = 'Analysis unavailable.';
+      recommendationsEl.appendChild(li);
+    }
+    return;
+  }
+
+  const contrast = result?.contrast || {};
+  const module = result?.module || {};
+  const logo = result?.logo || {};
+  const recommendations = Array.isArray(result?.recommendations) ? result.recommendations.filter(Boolean) : [];
+
+  const contrastText = contrast?.status ? `${contrast.status}${contrast.ratio ? ` (${contrast.ratio})` : ''}` : '—';
+  const moduleText = module?.status || '—';
+  const logoText = logo?.status || '—';
+  const scoreText = result?.score != null ? `${result.score} / 100` : '—';
+
+  contrastEl.innerHTML = `Contrast: <span class="muted">${escapeHtml(contrastText)}</span>`;
+  sizeEl.innerHTML = `Module size: <span class="muted">${escapeHtml(moduleText)}</span>`;
+  logoEl.innerHTML = `Logo impact: <span class="muted">${escapeHtml(logoText)}</span>`;
+
+  if (scoreEl) {
+    scoreEl.innerHTML = `Overall Score: <span class="muted">${escapeHtml(scoreText)}</span>`;
+  }
+
+  if (recommendationsEl) {
+    recommendationsEl.innerHTML = '';
+    if (recommendations.length) {
+      recommendations.forEach((item) => {
+        const li = document.createElement('li');
+        li.textContent = item;
+        recommendationsEl.appendChild(li);
+      });
+    } else {
+      const li = document.createElement('li');
+      li.textContent = 'This QR code should scan reliably.';
+      recommendationsEl.appendChild(li);
+    }
+  }
+}
+
 class QRGenerator {
   constructor(options = {}) {
     this.formSelector = options.formSelector || '#qr-form';
@@ -113,6 +172,8 @@ class QRGenerator {
     this.eccEl = f.querySelector('#ecc');
     this.logoInput = f.querySelector('#logo-upload');
 
+    console.log('Logo input found:', Boolean(this.logoInput));
+
     this.previewBtn = document.querySelector('#preview-btn');
     this.downloadPngBtn = document.querySelector('#download-png');
     this.downloadSvgBtn = document.querySelector('#download-svg');
@@ -121,7 +182,12 @@ class QRGenerator {
   _attachEvents() {
     // Live preview on input changes
     this.form.addEventListener('input', () => this._debounceGenerate());
-    this.form.addEventListener('change', () => this._debounceGenerate());
+    this.form.addEventListener('change', (event) => {
+      if (event.target && event.target.id === 'logo-upload') {
+        return;
+      }
+      this._debounceGenerate();
+    });
 
     // Buttons
     if (this.previewBtn) this.previewBtn.addEventListener('click', () => this.generate());
@@ -130,7 +196,10 @@ class QRGenerator {
 
     // Logo upload
     if (this.logoInput) {
-      this.logoInput.addEventListener('change', (e) => this._handleLogoUpload(e));
+      this.logoInput.addEventListener('change', (e) => {
+        console.log('Logo change event fired');
+        this._handleLogoUpload(e);
+      });
     }
   }
 
@@ -141,16 +210,30 @@ class QRGenerator {
 
   _handleLogoUpload(e) {
     const file = e.target.files && e.target.files[0];
+    console.log('Logo file selected:', file);
     if (!file) {
       this.logoDataUrl = null;
       this._debounceGenerate();
       return;
     }
+
     const reader = new FileReader();
     reader.onload = () => {
-      this.logoDataUrl = reader.result;
-      this._debounceGenerate();
+      const nextDataUrl = reader.result;
+      console.log('FileReader finished');
+      console.log('reader.result:', nextDataUrl ? nextDataUrl.slice(0, 80) : nextDataUrl);
+
+      if (typeof nextDataUrl === 'string' && nextDataUrl.startsWith('data:image/')) {
+        this.logoDataUrl = nextDataUrl;
+        console.log('logoDataUrl assigned');
+        this._debounceGenerate();
+      } else {
+        console.warn('Uploaded logo did not produce a usable data URL; image will be skipped.');
+        this.logoDataUrl = null;
+      }
     };
+
+    console.log('FileReader started');
     reader.readAsDataURL(file);
   }
 
@@ -387,6 +470,8 @@ class QRGenerator {
       return;
     }
 
+    console.log('generate() called');
+
     const payload = this.buildPayload();
     const type = this.typeEl?.value || "text";
     const validationType = this._getValidationType(type);
@@ -410,12 +495,16 @@ class QRGenerator {
     const dotStyle = (this.dotStyleEl && this.dotStyleEl.value) || 'square';
     const eyeStyle = (this.eyeStyleEl && this.eyeStyleEl.value) || 'frame';
 
+    const image = typeof this.logoDataUrl === 'string' && this.logoDataUrl.startsWith('data:image/')
+      ? this.logoDataUrl
+      : undefined;
+
     // build options object for QRCodeStyling
     const opts = {
       width: size,
       height: size,
       data: payload,
-      image: this.logoDataUrl || undefined,
+      image,
       margin: margin,
       qrOptions: { errorCorrectionLevel: this._getCorrectLevel(ecc) },
       backgroundOptions: { color: bg },
@@ -438,9 +527,12 @@ class QRGenerator {
       }
     };
 
+    console.log('QRCodeStyling update payload image present:', Boolean(image));
+
     // If instance exists, update it, otherwise create and append once
     if (this.qrCode) {
       try{
+        console.log('QRCodeStyling.update() called with image');
         this.qrCode.update(opts);
       }catch(e){
         // fallback: recreate
@@ -450,9 +542,24 @@ class QRGenerator {
 
     if (!this.qrCode) {
       // Use global QRCodeStyling exposed by loader
+      console.log('QRCodeStyling.create() called with image');
       this.qrCode = new window.QRCodeStyling(opts);
       if (!this.previewContainer) this._createPreviewContainer();
       this.qrCode.append(this.previewContainer);
+    }
+    try {
+      const quality = await analyzeQR(payload, {
+        fg,
+        bg,
+        size,
+        logo: this.logoDataUrl || null,
+        margin,
+        ecc
+      });
+      updateQualityUI(quality);
+    } catch (error) {
+      console.error('Quality analysis failed:', error);
+      updateQualityUI({ error: true });
     }
 
     // notify caller
