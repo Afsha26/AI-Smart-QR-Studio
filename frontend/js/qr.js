@@ -139,6 +139,7 @@ class QRGenerator {
     this.qrCode = null;
     this.logoDataUrl = null;
     this._debounceTimer = null;
+    this.explicitEcc = false;
 
     this._onGenerated = options.onGenerated || (() => {});
   }
@@ -172,7 +173,7 @@ class QRGenerator {
     this.eccEl = f.querySelector('#ecc');
     this.logoInput = f.querySelector('#logo-upload');
 
-    console.log('Logo input found:', Boolean(this.logoInput));
+    console.log('Logo input detected:', Boolean(this.logoInput));
 
     this.previewBtn = document.querySelector('#preview-btn');
     this.downloadPngBtn = document.querySelector('#download-png');
@@ -193,6 +194,11 @@ class QRGenerator {
     if (this.previewBtn) this.previewBtn.addEventListener('click', () => this.generate());
     if (this.downloadPngBtn) this.downloadPngBtn.addEventListener('click', () => this.downloadPNG());
     if (this.downloadSvgBtn) this.downloadSvgBtn.addEventListener('click', () => this.downloadSVG());
+    if (this.eccEl) {
+      this.eccEl.addEventListener('change', () => {
+        this.explicitEcc = true;
+      });
+    }
 
     // Logo upload
     if (this.logoInput) {
@@ -208,7 +214,7 @@ class QRGenerator {
     this._debounceTimer = setTimeout(() => this.generate(), this.debounceMs);
   }
 
-  _handleLogoUpload(e) {
+  async _handleLogoUpload(e) {
     const file = e.target.files && e.target.files[0];
     console.log('Logo file selected:', file);
     if (!file) {
@@ -217,24 +223,128 @@ class QRGenerator {
       return;
     }
 
+    if (file.type && !file.type.startsWith('image/')) {
+      console.warn('Uploaded file is not an image; logo will be skipped.');
+      this.logoDataUrl = null;
+      this._debounceGenerate();
+      return;
+    }
+
     const reader = new FileReader();
-    reader.onload = () => {
+    reader.onload = async () => {
       const nextDataUrl = reader.result;
       console.log('FileReader finished');
       console.log('reader.result:', nextDataUrl ? nextDataUrl.slice(0, 80) : nextDataUrl);
 
       if (typeof nextDataUrl === 'string' && nextDataUrl.startsWith('data:image/')) {
-        this.logoDataUrl = nextDataUrl;
-        console.log('logoDataUrl assigned');
-        this._debounceGenerate();
+        try {
+          this.logoDataUrl = await this._prepareLogoDataUrl(nextDataUrl, Number((this.sizeEl && this.sizeEl.value) || this.size) || this.size);
+          console.log('logoDataUrl assigned');
+          this._debounceGenerate();
+        } catch (error) {
+          console.warn('Could not process uploaded logo:', error);
+          this.logoDataUrl = null;
+          this._debounceGenerate();
+        }
       } else {
         console.warn('Uploaded logo did not produce a usable data URL; image will be skipped.');
         this.logoDataUrl = null;
+        this._debounceGenerate();
       }
     };
 
     console.log('FileReader started');
     reader.readAsDataURL(file);
+  }
+
+  async _prepareLogoDataUrl(dataUrl, qrSize) {
+    if (!dataUrl || typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/')) {
+      return dataUrl;
+    }
+
+    const img = await new Promise((resolve, reject) => {
+      const image = new Image();
+      image.onload = () => resolve(image);
+      image.onerror = () => reject(new Error('Unable to load image'));
+      image.src = dataUrl;
+    });
+
+    const width = img.naturalWidth || img.width || 0;
+    const height = img.naturalHeight || img.height || 0;
+    if (!width || !height) return dataUrl;
+
+    const sourceCanvas = document.createElement('canvas');
+    sourceCanvas.width = width;
+    sourceCanvas.height = height;
+    const sourceCtx = sourceCanvas.getContext('2d', { willReadFrequently: true });
+    if (!sourceCtx) return dataUrl;
+    sourceCtx.drawImage(img, 0, 0, width, height);
+
+    const imageData = sourceCtx.getImageData(0, 0, width, height);
+    const pixels = imageData.data;
+    let minX = width;
+    let minY = height;
+    let maxX = -1;
+    let maxY = -1;
+
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        const idx = (y * width + x) * 4;
+        const alpha = pixels[idx + 3];
+        if (alpha > 16) {
+          minX = Math.min(minX, x);
+          minY = Math.min(minY, y);
+          maxX = Math.max(maxX, x);
+          maxY = Math.max(maxY, y);
+        }
+      }
+    }
+
+    let cropX = 0;
+    let cropY = 0;
+    let cropWidth = width;
+    let cropHeight = height;
+
+    if (maxX >= 0 && maxY >= 0) {
+      cropX = minX;
+      cropY = minY;
+      cropWidth = maxX - minX + 1;
+      cropHeight = maxY - minY + 1;
+    }
+
+    const safeSize = Math.max(72, Math.min(220, Math.floor((qrSize || this.size || 512) * 0.32)));
+    const aspectRatio = cropWidth / cropHeight;
+    let targetWidth = cropWidth;
+    let targetHeight = cropHeight;
+
+    if (cropWidth > cropHeight) {
+      targetWidth = safeSize;
+      targetHeight = Math.max(24, Math.round(safeSize / aspectRatio));
+    } else {
+      targetHeight = safeSize;
+      targetWidth = Math.max(24, Math.round(safeSize * aspectRatio));
+    }
+
+    const outputCanvas = document.createElement('canvas');
+    outputCanvas.width = safeSize;
+    outputCanvas.height = safeSize;
+    const outputCtx = outputCanvas.getContext('2d');
+    if (!outputCtx) return dataUrl;
+
+    outputCtx.clearRect(0, 0, safeSize, safeSize);
+    outputCtx.drawImage(
+      sourceCanvas,
+      cropX,
+      cropY,
+      cropWidth,
+      cropHeight,
+      Math.round((safeSize - targetWidth) / 2),
+      Math.round((safeSize - targetHeight) / 2),
+      targetWidth,
+      targetHeight
+    );
+
+    return outputCanvas.toDataURL('image/png');
   }
 
   _getValidationType(type) {
@@ -498,6 +608,9 @@ class QRGenerator {
     const image = typeof this.logoDataUrl === 'string' && this.logoDataUrl.startsWith('data:image/')
       ? this.logoDataUrl
       : undefined;
+    const effectiveEcc = image && !this.explicitEcc ? 'H' : this._getCorrectLevel(ecc);
+
+    console.log('Image included in QR options:', Boolean(image));
 
     // build options object for QRCodeStyling
     const opts = {
@@ -506,7 +619,7 @@ class QRGenerator {
       data: payload,
       image,
       margin: margin,
-      qrOptions: { errorCorrectionLevel: this._getCorrectLevel(ecc) },
+      qrOptions: { errorCorrectionLevel: effectiveEcc },
       backgroundOptions: { color: bg },
       dotsOptions: {
         color: this._buildGradient(gradient, fg),
@@ -522,8 +635,8 @@ class QRGenerator {
       },
       imageOptions: {
         crossOrigin: 'anonymous',
-        imageSize: 0.18, // image occupies ~18% width
-        margin: 5
+        imageSize: 0.32,
+        margin: 1
       }
     };
 
@@ -554,7 +667,7 @@ class QRGenerator {
         size,
         logo: this.logoDataUrl || null,
         margin,
-        ecc
+        ecc: effectiveEcc
       });
       updateQualityUI(quality);
     } catch (error) {
