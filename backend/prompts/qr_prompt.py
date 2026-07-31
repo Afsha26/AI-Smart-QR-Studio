@@ -124,6 +124,11 @@ def build_improve_prompt(existing_config: str) -> str:
     return f"{IMPROVE_PROMPT}\n\nExisting QR configuration:\n{existing_config}"
 
 
+def build_explain_prompt(user_request: str) -> str:
+    """Build an explanation prompt for a specific QR-related request."""
+    return build_prompt(EXPLAIN_PROMPT, user_request)
+
+
 __all__ = [
     "SYSTEM_PROMPT",
     "GENERATE_QR_PROMPT",
@@ -134,4 +139,5 @@ __all__ = [
     "build_generate_qr_prompt",
     "build_theme_prompt",
     "build_improve_prompt",
+    "build_explain_prompt",
 ]

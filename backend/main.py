@@ -11,7 +11,7 @@ import os
 import logging
 from typing import List
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
@@ -31,8 +31,12 @@ def create_app() -> FastAPI:
     @app.get("/")
     async def home():
         return {
-            "message": "AI Smart QR Backend Running"
+            "message": "AI Smart QR Studio Backend Running"
         }
+
+    @app.get("/health")
+    async def health():
+        return {"status": "healthy"}
     # Configure CORS
     origins_env = os.getenv('BACKEND_ALLOWED_ORIGINS', '')
     if origins_env:
@@ -61,7 +65,7 @@ def create_app() -> FastAPI:
     # Routers are thin and delegate to services in backend.services
     from backend.routers import ai, validator, analysis, download
 
-    app.include_router(ai.router, prefix='/ai', tags=['ai'])
+    app.include_router(ai.router)
     app.include_router(validator.router, prefix='/validator', tags=['validator'])
     app.include_router(analysis.router, prefix='/analysis', tags=['analysis'])
     app.include_router(download.router, prefix='/download', tags=['download'])
@@ -71,14 +75,35 @@ def create_app() -> FastAPI:
     async def validation_exception_handler(request: Request, exc: RequestValidationError):
         logger.warning('Validation error: %s %s', request.url, exc)
         return JSONResponse(status_code=422, content={
-            'detail': exc.errors(),
-            'body': exc.body,
+            'success': False,
+            'data': None,
+            'error': 'Invalid request',
+            'metadata': {
+                'detail': exc.errors(),
+                'body': exc.body,
+            },
+        })
+
+    @app.exception_handler(HTTPException)
+    async def http_exception_handler(request: Request, exc: HTTPException):
+        logger.warning('HTTP error: %s %s -> %s', request.method, request.url, exc.detail)
+        message = exc.detail if isinstance(exc.detail, str) else 'Request failed'
+        return JSONResponse(status_code=exc.status_code, content={
+            'success': False,
+            'data': None,
+            'error': message,
+            'metadata': None,
         })
 
     @app.exception_handler(Exception)
     async def generic_exception_handler(request: Request, exc: Exception):
         logger.exception('Unhandled exception while processing request: %s %s', request.method, request.url)
-        return JSONResponse(status_code=500, content={'detail': 'Internal server error'})
+        return JSONResponse(status_code=500, content={
+            'success': False,
+            'data': None,
+            'error': 'Internal server error',
+            'metadata': None,
+        })
 
     return app
 
