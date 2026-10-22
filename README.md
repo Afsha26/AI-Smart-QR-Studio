@@ -132,7 +132,7 @@ LOG_LEVEL=INFO
 
 > The backend includes fallback stubs so you can run the app locally without Gemini credentials.
 
-## Screenshots
+<!-- ## Screenshots
 
 Include screenshots in `images/` and display them here once available.
 
@@ -142,7 +142,7 @@ Example:
 ![Studio Page](images/studio-screenshot.png)
 ![Landing Page](images/landing-screenshot.png)
 ```
-
+-->
 ## Future Enhancements
 
 - Add full Gemini/OpenAI integration with structured prompt templates
