@@ -17,7 +17,7 @@ client = genai.Client(api_key=api_key)
 
 # Send a simple prompt
 response = client.models.generate_content(
-    model="gemini-3.6-flash",
+    model=os.getenv("GEMINI_MODEL", "gemini-3.8-flash"),
     contents="Say Hello in one sentence."
 )
 

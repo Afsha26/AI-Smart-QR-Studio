@@ -44,10 +44,42 @@ _project_root = os.path.dirname(_backend_dir)
 load_dotenv(dotenv_path=os.path.join(_backend_dir, ".env"))
 load_dotenv(dotenv_path=os.path.join(_project_root, ".env"))
 
-DEFAULT_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+DEFAULT_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
 DEFAULT_TEMPERATURE = float(os.getenv("GEMINI_TEMPERATURE", "0.4"))
 MAX_OUTPUT_TOKENS = int(os.getenv("GEMINI_MAX_OUTPUT_TOKENS", "1024"))
 REQUEST_TIMEOUT = float(os.getenv("GEMINI_REQUEST_TIMEOUT", "60"))
+
+_API_KEY_PATTERN = re.compile(r"(?i)(AIza[0-9A-Za-z_-]{20,})")
+_KEY_VALUE_PATTERN = re.compile(
+    r"(?i)(['\"]?(?:api[_ -]?key|key|token)['\"]?\s*[:=]\s*['\"]?)([^,\s'\"&}]+)"
+)
+_BEARER_PATTERN = re.compile(r"(?i)(Bearer\s+)[A-Za-z0-9._~+/-]+=*")
+_AUTHORIZATION_PATTERN = re.compile(r"(?i)(authorization\s*[:=]\s*)[^\s,;]+")
+
+
+def _http_status_code(exc: Exception) -> int | None:
+    candidates = (
+        getattr(exc, "status_code", None),
+        getattr(getattr(exc, "response", None), "status_code", None),
+        getattr(exc, "code", None),
+    )
+    for candidate in candidates:
+        try:
+            status = int(candidate)
+        except (TypeError, ValueError):
+            continue
+        if 100 <= status <= 599:
+            return status
+    return None
+
+
+def _sanitized_error_detail(exc: Exception) -> str:
+    detail = " ".join(str(exc).split())
+    detail = _API_KEY_PATTERN.sub("[REDACTED]", detail)
+    detail = _KEY_VALUE_PATTERN.sub(r"\1[REDACTED]", detail)
+    detail = _BEARER_PATTERN.sub(r"\1[REDACTED]", detail)
+    detail = _AUTHORIZATION_PATTERN.sub(r"\1[REDACTED]", detail)
+    return detail[:500]
 
 
 class GeminiServiceError(Exception):
@@ -153,10 +185,16 @@ class GeminiService:
                 timeout=self._request_timeout,
             )
         except asyncio.TimeoutError as exc:
-            logger.exception("Gemini request timed out for %s", operation_name)
+            logger.error(
+                "Gemini provider failure operation=%s exception_class=%s "
+                "http_status=none provider_code=none detail=%s",
+                operation_name,
+                type(exc).__name__,
+                _sanitized_error_detail(exc),
+            )
             raise GeminiTimeoutError("Gemini request timed out.") from exc
         except Exception as exc:  # pragma: no cover - exercised via runtime errors
-            logger.exception("Gemini request failed for %s", operation_name)
+            self._log_api_error(exc, operation_name)
             raise self._wrap_api_error(exc) from exc
 
         elapsed_ms = (time.perf_counter() - started_at) * 1000
@@ -268,18 +306,49 @@ class GeminiService:
 
     def _wrap_api_error(self, exc: Exception) -> GeminiServiceError:
         message = str(exc).lower()
-        detail = f"{exc}"
-        if "api key" in message or "unauthorized" in message or "authentication" in message:
-            return GeminiAuthenticationError(f"Gemini authentication failed. Check the API key. Original error: {detail}")
-        if "quota" in message or "429" in message or "rate limit" in message:
-            return GeminiQuotaError(f"Gemini quota exceeded. Please try again later. Original error: {detail}")
-        if "timeout" in message or "timed out" in message or "deadline" in message:
-            return GeminiTimeoutError(f"Gemini request timed out. Original error: {detail}")
-        return GeminiAPIError(f"Gemini request failed. Original error: {detail}")
+        status = _http_status_code(exc)
+        if status in (401, 403) or any(
+            phrase in message for phrase in ("api key", "unauthorized", "authentication")
+        ):
+            return GeminiAuthenticationError("Gemini authentication failed. Verify GEMINI_API_KEY.")
+        if status == 429 or any(phrase in message for phrase in ("quota", "429", "rate limit")):
+            return GeminiQuotaError("Gemini quota exceeded. Check your account limits or try again later.")
+        if (
+            "timeout" in type(exc).__name__.lower()
+            or "deadline" in type(exc).__name__.lower()
+            or any(phrase in message for phrase in ("timeout", "timed out", "deadline"))
+        ):
+            return GeminiTimeoutError("Gemini request timed out. Please try again.")
+        if status == 404 and any(phrase in message for phrase in ("model", "not_found", "not found")):
+            return GeminiModelError("The configured Gemini model is unavailable.")
+        if status == 503 or "service unavailable" in message:
+            return GeminiUnavailableError("Gemini service is temporarily unavailable.")
+        return GeminiAPIError("Gemini request failed. Check the backend logs for details.")
+
+    def _log_api_error(self, exc: Exception, operation_name: str) -> None:
+        raw_code = getattr(exc, "code", None)
+        provider_code = raw_code if raw_code is not None and _http_status_code(exc) != raw_code else None
+        logger.error(
+            "Gemini provider failure operation=%s exception_class=%s http_status=%s "
+            "provider_code=%s detail=%s",
+            operation_name,
+            type(exc).__name__,
+            _http_status_code(exc) or "none",
+            provider_code if provider_code is not None else "none",
+            _sanitized_error_detail(exc),
+        )
 
 
 class GeminiAPIError(GeminiServiceError):
     """Raised when the Gemini API returns a generic failure."""
+
+
+class GeminiModelError(GeminiAPIError):
+    """Raised when the configured Gemini model is not available."""
+
+
+class GeminiUnavailableError(GeminiAPIError):
+    """Raised when the Gemini service is temporarily unavailable."""
 
 
 async def generate_text(prompt: str, max_tokens: int = 256) -> Dict[str, Any]:
@@ -299,10 +368,12 @@ __all__ = [
     "GeminiAPIError",
     "GeminiAuthenticationError",
     "GeminiConfigurationError",
+    "GeminiModelError",
     "GeminiQuotaError",
     "GeminiResponseError",
     "GeminiService",
     "GeminiServiceError",
     "GeminiTimeoutError",
+    "GeminiUnavailableError",
     "generate_text",
 ]

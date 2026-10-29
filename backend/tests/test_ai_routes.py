@@ -69,3 +69,64 @@ def test_existing_ai_endpoints_keep_their_response_envelope(monkeypatch):
             "error": None,
             "metadata": None,
         }
+
+
+def test_ai_theme_endpoint_returns_mocked_gemini_theme(monkeypatch):
+    class FakeGeminiService:
+        async def suggest_theme(self, prompt):
+            assert prompt == "Suggest an ocean theme"
+            return {
+                "theme": "Ocean",
+                "foreground": "#123456",
+                "background": "#ffffff",
+                "gradient": "linear",
+                "dotStyle": "rounded",
+                "eyeStyle": "rounded",
+                "margin": 8,
+                "ecc": "H",
+            }
+
+    monkeypatch.setattr("backend.routers.ai.GeminiService", FakeGeminiService)
+
+    response = TestClient(create_app()).post(
+        "/ai/theme",
+        json={"prompt": "Suggest an ocean theme"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "success": True,
+        "data": {
+            "theme": "Ocean",
+            "foreground": "#123456",
+            "background": "#ffffff",
+            "gradient": "linear",
+            "dotStyle": "rounded",
+            "eyeStyle": "rounded",
+            "margin": 8,
+            "ecc": "H",
+        },
+        "error": None,
+        "metadata": None,
+    }
+
+
+def test_ai_theme_endpoint_does_not_return_raw_provider_errors(monkeypatch, caplog):
+    from backend.services.gemini_service import GeminiAPIError
+
+    secret = "sensitive-provider-detail"
+
+    class FailingGeminiService:
+        async def suggest_theme(self, prompt):
+            raise GeminiAPIError(f"Model unavailable: {secret}")
+
+    monkeypatch.setattr("backend.routers.ai.GeminiService", FailingGeminiService)
+
+    response = TestClient(create_app()).post(
+        "/ai/theme",
+        json={"prompt": "Suggest an ocean theme"},
+    )
+
+    assert response.status_code == 502
+    assert secret not in response.text
+    assert secret not in caplog.text

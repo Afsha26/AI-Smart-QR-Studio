@@ -48,6 +48,10 @@ def create_app() -> FastAPI:
     origins_env = os.getenv('BACKEND_ALLOWED_ORIGINS', '')
     if origins_env:
         origins = [o.strip() for o in origins_env.split(',') if o.strip()]
+        origins.extend([
+            'http://127.0.0.1:5500',
+            'http://localhost:5500',
+        ])
         for origin in origins.copy():
             parsed = urlsplit(origin)
             if parsed.hostname == 'localhost':
@@ -60,6 +64,8 @@ def create_app() -> FastAPI:
             'http://127.0.0.1:3000',
             'http://localhost:8001',
             'http://127.0.0.1:8001',
+            'http://localhost:5500',
+            'http://127.0.0.1:5500',
         ]
 
     app.add_middleware(

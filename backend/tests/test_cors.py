@@ -11,10 +11,10 @@ from backend.main import create_app
         ("/analysis/quality", {"payload": "https://example.com", "options": {}}),
     ],
 )
-def test_frontend_loopback_preflight_and_post(monkeypatch, path, body):
+@pytest.mark.parametrize("origin", ["http://127.0.0.1:5500", "http://localhost:5500"])
+def test_live_server_preflight_and_post(monkeypatch, path, body, origin):
     monkeypatch.setenv("BACKEND_ALLOWED_ORIGINS", "http://localhost:8001")
     client = TestClient(create_app())
-    origin = "http://127.0.0.1:8001"
 
     preflight = client.options(
         path,
@@ -36,14 +36,14 @@ def test_frontend_loopback_preflight_and_post(monkeypatch, path, body):
     assert response.headers["access-control-allow-origin"] == origin
 
 
-def test_cors_rejects_unconfigured_frontend_origin(monkeypatch):
+def test_cors_rejects_unconfigured_origin(monkeypatch):
     monkeypatch.setenv("BACKEND_ALLOWED_ORIGINS", "http://localhost:8001")
     client = TestClient(create_app())
 
     response = client.options(
         "/validator/",
         headers={
-            "Origin": "http://127.0.0.1:5500",
+            "Origin": "http://localhost:5501",
             "Access-Control-Request-Method": "POST",
             "Access-Control-Request-Headers": "content-type",
         },

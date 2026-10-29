@@ -6,9 +6,16 @@ from pydantic import BaseModel, Field
 
 from backend.services.ai_service import generate_content as generate_content_service
 from backend.services.gemini_service import (
+    GeminiAPIError,
+    GeminiAuthenticationError,
     GeminiConfigurationError,
+    GeminiModelError,
+    GeminiQuotaError,
+    GeminiResponseError,
     GeminiService,
     GeminiServiceError,
+    GeminiTimeoutError,
+    GeminiUnavailableError,
 )
 
 logger = logging.getLogger(__name__)
@@ -65,6 +72,24 @@ def _build_error_response(message: str) -> AIResponse:
     return AIResponse(success=False, data=None, error=message)
 
 
+def _safe_gemini_error_detail(exc: GeminiServiceError) -> str:
+    if isinstance(exc, GeminiAuthenticationError):
+        return "Gemini authentication failed. Verify GEMINI_API_KEY."
+    if isinstance(exc, GeminiQuotaError):
+        return "Gemini quota exceeded. Check your account limits or try again later."
+    if isinstance(exc, GeminiTimeoutError):
+        return "Gemini request timed out. Please try again."
+    if isinstance(exc, GeminiModelError):
+        return "The configured Gemini model is unavailable. Set GEMINI_MODEL to a supported model."
+    if isinstance(exc, GeminiUnavailableError):
+        return "Gemini is temporarily unavailable. Please try again later."
+    if isinstance(exc, GeminiResponseError):
+        return "Gemini returned an invalid response. Please try again."
+    if isinstance(exc, GeminiAPIError):
+        return "Gemini request failed. Check the backend logs for details."
+    return "Gemini service failed. Check the backend logs for details."
+
+
 def _get_gemini_service() -> GeminiService:
     try:
         return GeminiService()
@@ -94,8 +119,8 @@ async def generate(payload: GenerateRequest) -> AIResponse:
     except HTTPException:
         raise
     except GeminiServiceError as exc:
-        logger.exception("Gemini generation failed")
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        logger.error("Gemini generation failed exception_class=%s", type(exc).__name__)
+        raise HTTPException(status_code=502, detail=_safe_gemini_error_detail(exc)) from exc
     except Exception as exc:
         logger.exception("Unexpected error while generating QR configuration")
         raise HTTPException(status_code=500, detail="Unexpected server error") from exc
@@ -113,8 +138,8 @@ async def theme(payload: ThemeRequest) -> AIResponse:
     except HTTPException:
         raise
     except GeminiServiceError as exc:
-        logger.exception("Gemini theme generation failed")
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        logger.error("Gemini theme generation failed exception_class=%s", type(exc).__name__)
+        raise HTTPException(status_code=502, detail=_safe_gemini_error_detail(exc)) from exc
     except Exception as exc:
         logger.exception("Unexpected error while generating theme")
         raise HTTPException(status_code=500, detail="Unexpected server error") from exc
@@ -132,8 +157,8 @@ async def improve(payload: ImproveRequest) -> AIResponse:
     except HTTPException:
         raise
     except GeminiServiceError as exc:
-        logger.exception("Gemini improvement generation failed")
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        logger.error("Gemini improvement generation failed exception_class=%s", type(exc).__name__)
+        raise HTTPException(status_code=502, detail=_safe_gemini_error_detail(exc)) from exc
     except Exception as exc:
         logger.exception("Unexpected error while improving QR")
         raise HTTPException(status_code=500, detail="Unexpected server error") from exc
@@ -151,8 +176,8 @@ async def explain(payload: ExplainRequest) -> AIResponse:
     except HTTPException:
         raise
     except GeminiServiceError as exc:
-        logger.exception("Gemini explanation failed")
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        logger.error("Gemini explanation failed exception_class=%s", type(exc).__name__)
+        raise HTTPException(status_code=502, detail=_safe_gemini_error_detail(exc)) from exc
     except Exception as exc:
         logger.exception("Unexpected error while explaining QR")
         raise HTTPException(status_code=500, detail="Unexpected server error") from exc
