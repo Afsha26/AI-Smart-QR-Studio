@@ -53,7 +53,8 @@ export async function generateAITheme(prompt) {
   if (!prompt) throw new Error('generateAITheme requires a prompt');
   try {
     const res = await request(`${API_BASE}/ai/theme`, { method: 'POST', body: { prompt } });
-    return res; // expected: { theme: {...} } or similar
+    if (!res?.success || !res.data) throw new Error(res?.error || 'AI theme generation failed');
+    return res.data;
   } catch (err) {
     console.error('generateAITheme error', err);
     throw err;
@@ -79,7 +80,7 @@ export async function validateInput(type, value) {
   if (!type) throw new Error('validateInput requires a qr type');
   if (value == null) throw new Error('validateInput requires a value');
   try {
-    const res = await request(`${API_BASE}/validator`, { method: 'POST', body: { type, value } });
+    const res = await request(`${API_BASE}/validator/`, { method: 'POST', body: { type, value } });
     return res; // expected: { valid, normalized, issues }
   } catch (err) {
     console.error('Unable to validate input.', err);
@@ -113,7 +114,7 @@ export async function downloadQR(payload, format = 'png', options = {}) {
   if (!supported.includes(format)) throw new Error(`Unsupported format ${format}`);
   try {
     // expect a binary response
-    const blob = await request(`${API_BASE}/download`, { method: 'POST', body: { payload, format, options }, expectBlob: true, headers: { Accept: '*/*' } });
+    const blob = await request(`${API_BASE}/download/`, { method: 'POST', body: { payload, format, options }, expectBlob: true, headers: { Accept: '*/*' } });
     return blob; // caller can save via URL.createObjectURL or other means
   } catch (err) {
     console.error('downloadQR error', err);

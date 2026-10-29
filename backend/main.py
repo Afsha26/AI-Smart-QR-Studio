@@ -9,7 +9,9 @@ Note: Keep business logic out of this module. Implement features in `backend.ser
 """
 import os
 import logging
+import sys
 from typing import List
+from urllib.parse import urlsplit, urlunsplit
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
@@ -19,7 +21,12 @@ from fastapi.exceptions import RequestValidationError
 from dotenv import load_dotenv
 
 # Load .env into environment early
-load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '.env'))
+_backend_dir = os.path.dirname(os.path.abspath(__file__))
+_project_root = os.path.dirname(_backend_dir)
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
+load_dotenv(dotenv_path=os.path.join(_backend_dir, '.env'))
+load_dotenv(dotenv_path=os.path.join(_project_root, '.env'))
 
 LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO')
 logging.basicConfig(level=LOG_LEVEL)
@@ -41,24 +48,26 @@ def create_app() -> FastAPI:
     origins_env = os.getenv('BACKEND_ALLOWED_ORIGINS', '')
     if origins_env:
         origins = [o.strip() for o in origins_env.split(',') if o.strip()]
+        for origin in origins.copy():
+            parsed = urlsplit(origin)
+            if parsed.hostname == 'localhost':
+                loopback_host = f'127.0.0.1:{parsed.port}' if parsed.port else '127.0.0.1'
+                origins.append(urlunsplit((parsed.scheme, loopback_host, '', '', '')))
     else:
-        # sensible defaults for local development
+        # Local frontend development origins documented by the project.
         origins = [
-            'http://localhost',
             'http://localhost:3000',
-            'http://localhost:5500',
-            'http://127.0.0.1',
             'http://127.0.0.1:3000',
-            'http://127.0.0.1:5500',
-            'http://127.0.0.2:5500',
+            'http://localhost:8001',
+            'http://127.0.0.1:8001',
         ]
 
     app.add_middleware(
         CORSMiddleware,
         allow_origins=origins,
-        allow_credentials=True,
-        allow_methods=['*'],
-        allow_headers=['*'],
+        allow_credentials=False,
+        allow_methods=['GET', 'POST', 'OPTIONS'],
+        allow_headers=['Content-Type'],
     )
 
     # Register routers

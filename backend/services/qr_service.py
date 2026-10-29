@@ -29,7 +29,7 @@ async def _run_blocking(func, *args, **kwargs):
     return await loop.run_in_executor(None, lambda: func(*args, **kwargs))
 
 
-async def generate_svg(payload: str, border: int = 4, scale: int = 1) -> bytes:
+async def generate_svg(payload: str, border: int = 4, scale: int = 1, error: Optional[str] = None) -> bytes:
     """Generate SVG bytes for the given payload.
 
     Returns raw bytes of the SVG document (UTF-8 encoded).
@@ -38,7 +38,8 @@ async def generate_svg(payload: str, border: int = 4, scale: int = 1) -> bytes:
         raise RuntimeError('segno is required for SVG generation. Install segno in the backend environment.')
 
     def _make():
-        qr = segno.make(payload)
+        err = error.lower() if isinstance(error, str) and error.lower() in {'l', 'm', 'q', 'h'} else None
+        qr = segno.make(payload, error=err)
         out = BytesIO()
         qr.save(out, kind='svg', xmldecl=True, scale=scale, border=border)
         return out.getvalue()
@@ -46,7 +47,7 @@ async def generate_svg(payload: str, border: int = 4, scale: int = 1) -> bytes:
     return await _run_blocking(_make)
 
 
-async def generate_png(payload: str, scale: int = 4, border: int = 4) -> bytes:
+async def generate_png(payload: str, scale: int = 4, border: int = 4, error: Optional[str] = None) -> bytes:
     """Generate PNG bytes for the given payload.
 
     This uses segno's PNG output which will use Pillow if available. If
@@ -56,7 +57,8 @@ async def generate_png(payload: str, scale: int = 4, border: int = 4) -> bytes:
         raise RuntimeError('segno is required for PNG generation. Install segno in the backend environment.')
 
     def _make():
-        qr = segno.make(payload)
+        err = error.lower() if isinstance(error, str) and error.lower() in {'l', 'm', 'q', 'h'} else None
+        qr = segno.make(payload, error=err)
         out = BytesIO()
         qr.save(out, kind='png', scale=scale, border=border)
         return out.getvalue()
@@ -71,10 +73,13 @@ async def render(payload: str, fmt: str = 'png', options: Optional[dict] = None)
     """
     fmt = (fmt or 'png').lower()
     options = options or {}
+    border = int(options.get('border') or options.get('margin') or 4)
+    scale = int(options.get('scale') or (1 if fmt == 'svg' else 4))
+    error = options.get('ecc') or options.get('error')
     if fmt == 'svg':
-        data = await generate_svg(payload, border=int(options.get('border', 4)), scale=int(options.get('scale', 1)))
+        data = await generate_svg(payload, border=border, scale=scale, error=error)
         return data, 'image/svg+xml'
     if fmt == 'png':
-        data = await generate_png(payload, scale=int(options.get('scale', 4)), border=int(options.get('border', 4)))
+        data = await generate_png(payload, scale=scale, border=border, error=error)
         return data, 'image/png'
     raise ValueError(f'Unsupported format: {fmt}')

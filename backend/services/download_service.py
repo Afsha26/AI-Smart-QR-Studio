@@ -1,21 +1,11 @@
-"""Download/render service stub.
+"""Download and rendering service.
 
-This module should render QR codes server-side (SVG/PNG) and return bytes + mime type.
-For now it returns a tiny placeholder PNG or simple SVG for demos.
+Renders genuine QR codes (PNG/SVG) using `backend.services.qr_service`.
 """
-import asyncio
-import base64
-
-SAMPLE_SVG = b'''<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><rect width="100%" height="100%" fill="#fff"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="#000">QR</text></svg>'''
+from typing import Tuple
+from backend.services.qr_service import render as qr_render
 
 
-async def render_download(payload: str, fmt: str, options: dict) -> tuple[bytes, str]:
-    await asyncio.sleep(0.02)
-    if fmt == 'svg':
-        return (SAMPLE_SVG, 'image/svg+xml')
-    # return tiny PNG via data URI decode (transparent 1x1 PNG)
-    # For demo, encode a very small 1x1 PNG (not actually a QR) — replace with real render
-    tiny_png_b64 = (
-        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMAASsJTYQAAAAASUVORK5CYII='
-    )
-    return (base64.b64decode(tiny_png_b64), 'image/png')
+async def render_download(payload: str, fmt: str, options: dict) -> Tuple[bytes, str]:
+    """Render a QR code in the requested format (PNG or SVG) and return (bytes, mime_type)."""
+    return await qr_render(payload, fmt, options or {})

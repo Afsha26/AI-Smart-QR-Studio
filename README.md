@@ -21,7 +21,7 @@ AI Smart QR Studio is a polished, production-ready portfolio project for generat
 - Frontend: HTML5, CSS3, Vanilla JavaScript, ES6 modules
 - Backend: Python, FastAPI, Uvicorn
 - AI: Google Gemini-compatible backend wrapper
-- QR rendering: QRCode.js for live preview and `segno` / `Pillow` for backend downloads
+- QR rendering: QRCodeStyling for live previews and browser downloads; `segno` for backend PNG/SVG rendering
 - Data persistence: LocalStorage for client-side history
 
 ## Folder Structure
@@ -99,11 +99,10 @@ The frontend is static and can be opened directly in the browser for quick previ
 Recommended local development flow:
 
 ```bash
-cd frontend
 python -m http.server 8001
 ```
 
-Then open: `http://localhost:8001`
+Run the command from the project root, then open `http://localhost:8001/frontend/`.
 
 ## Running the FastAPI Backend
 

@@ -88,6 +88,7 @@
                   <option value="square">Square</option>
                   <option value="round">Round</option>
                   <option value="rounded">Rounded</option>
+                  <option value="classy-rounded">Classy rounded</option>
                 </select>
               </div>
 
@@ -161,9 +162,9 @@
 
             <article class="card" id="ai-card" aria-labelledby="ai-suggestions">
               <h3 id="ai-suggestions">AI Suggestions</h3>
-              <div id="ai-suggestion-list">AI-generated title, tagline and CTA will show here.</div>
+              <div id="ai-suggestion-list" aria-live="polite">Theme suggestions will appear here.</div>
               <div class="card-actions">
-                <button type="button" id="apply-theme">Apply Theme</button>
+                <button type="button" id="apply-theme" disabled>Apply Theme</button>
               </div>
             </article>
           </div>

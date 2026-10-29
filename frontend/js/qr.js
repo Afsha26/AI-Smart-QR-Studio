@@ -1,6 +1,6 @@
 // QR generator module migrated to `qr-code-styling`
 // Exports: QRGenerator class and a default `init` helper
-import { analyzeQR, validateInput } from "./api.js";
+import { analyzeQR, generateAITheme, validateInput } from "./api.js";
 
 const validationMessages = {
   invalid_url: 'Please enter a valid website URL.',
@@ -172,12 +172,18 @@ class QRGenerator {
     this.marginEl = f.querySelector('#margin');
     this.eccEl = f.querySelector('#ecc');
     this.logoInput = f.querySelector('#logo-upload');
+    this.logoPreviewEl = f.querySelector('#logo-preview');
 
     console.log('Logo input detected:', Boolean(this.logoInput));
 
     this.previewBtn = document.querySelector('#preview-btn');
     this.downloadPngBtn = document.querySelector('#download-png');
     this.downloadSvgBtn = document.querySelector('#download-svg');
+    this.aiPromptEl = f.querySelector('#ai-prompt');
+    this.suggestThemeBtn = f.querySelector('#ai-theme');
+    this.applyThemeBtn = document.querySelector('#apply-theme');
+    this.aiSuggestionEl = document.querySelector('#ai-suggestion-list');
+    this.suggestedTheme = null;
   }
 
   _attachEvents() {
@@ -194,6 +200,12 @@ class QRGenerator {
     if (this.previewBtn) this.previewBtn.addEventListener('click', () => this.generate());
     if (this.downloadPngBtn) this.downloadPngBtn.addEventListener('click', () => this.downloadPNG());
     if (this.downloadSvgBtn) this.downloadSvgBtn.addEventListener('click', () => this.downloadSVG());
+    if (this.suggestThemeBtn) {
+      this.suggestThemeBtn.addEventListener('click', () => this.suggestTheme());
+    }
+    if (this.applyThemeBtn) {
+      this.applyThemeBtn.addEventListener('click', () => this.applySuggestedTheme());
+    }
     if (this.eccEl) {
       this.eccEl.addEventListener('change', () => {
         this.explicitEcc = true;
@@ -214,11 +226,163 @@ class QRGenerator {
     this._debounceTimer = setTimeout(() => this.generate(), this.debounceMs);
   }
 
+  _getApplicableThemeStyles(theme) {
+    if (!theme || typeof theme !== 'object' || Array.isArray(theme)) return {};
+
+    const styles = {};
+    const normalizeColor = (value) => {
+      if (typeof value !== 'string' || !/^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(value)) return null;
+      const hex = value.slice(1);
+      return `#${hex.length === 3 ? [...hex].map((char) => char + char).join('') : hex}`.toLowerCase();
+    };
+    const foreground = normalizeColor(theme.foreground);
+    const background = normalizeColor(theme.background);
+    if (foreground) styles.foreground = foreground;
+    if (background) styles.background = background;
+
+    const gradient = typeof theme.gradient === 'string' ? theme.gradient.toLowerCase() : '';
+    if (['none', 'linear', 'radial'].includes(gradient)) styles.gradient = gradient;
+
+    const dotStyle = typeof theme.dotStyle === 'string' ? theme.dotStyle.toLowerCase() : '';
+    if (this.dotStyleEl && Array.from(this.dotStyleEl.options).some((option) => option.value === dotStyle)) {
+      styles.dotStyle = dotStyle;
+    }
+
+    const eyeStyle = typeof theme.eyeStyle === 'string' ? theme.eyeStyle.toLowerCase() : '';
+    const normalizedEyeStyle = eyeStyle === 'square' ? 'frame' : eyeStyle;
+    if (this.eyeStyleEl && Array.from(this.eyeStyleEl.options).some((option) => option.value === normalizedEyeStyle)) {
+      styles.eyeStyle = normalizedEyeStyle;
+    }
+
+    const marginValue = theme.margin;
+    const margin = typeof marginValue === 'number'
+      ? marginValue
+      : typeof marginValue === 'string' && /^\d+$/.test(marginValue)
+        ? Number(marginValue)
+        : NaN;
+    if (Number.isInteger(margin) && margin >= 0 && margin <= 40) {
+      styles.margin = String(margin);
+    }
+
+    const ecc = typeof theme.ecc === 'string' ? theme.ecc.toUpperCase() : '';
+    if (['L', 'M', 'Q', 'H'].includes(ecc)) styles.ecc = ecc;
+
+    return styles;
+  }
+
+  _renderThemeSuggestion(theme, status = '') {
+    if (!this.aiSuggestionEl) return;
+
+    this.aiSuggestionEl.replaceChildren();
+    const title = document.createElement('p');
+    title.textContent = typeof theme?.theme === 'string' && theme.theme.trim()
+      ? `Suggested theme: ${theme.theme.trim()}`
+      : 'Suggested theme';
+    this.aiSuggestionEl.appendChild(title);
+
+    const fields = [
+      ['foreground', 'Foreground'],
+      ['background', 'Background'],
+      ['gradient', 'Gradient'],
+      ['dotStyle', 'Dot style'],
+      ['eyeStyle', 'Eye style'],
+      ['margin', 'Margin'],
+      ['ecc', 'Error correction'],
+    ];
+    const list = document.createElement('ul');
+    fields.forEach(([key, label]) => {
+      const value = theme?.[key];
+      if (typeof value !== 'string' && typeof value !== 'number') return;
+      const item = document.createElement('li');
+      item.textContent = `${label}: ${value}`;
+      list.appendChild(item);
+    });
+    if (list.childElementCount) this.aiSuggestionEl.appendChild(list);
+
+    const message = document.createElement('p');
+    message.setAttribute('role', 'status');
+    message.textContent = status || (Object.keys(this._getApplicableThemeStyles(theme)).length
+      ? ''
+      : 'No supported styling options were returned.');
+    if (message.textContent) this.aiSuggestionEl.appendChild(message);
+
+    if (this.applyThemeBtn) {
+      this.applyThemeBtn.disabled = Object.keys(this._getApplicableThemeStyles(theme)).length === 0;
+    }
+  }
+
+  async suggestTheme() {
+    if (!this.suggestThemeBtn) return;
+
+    const prompt = this.aiPromptEl?.value.trim();
+    if (!prompt) {
+      this.suggestedTheme = null;
+      this._renderThemeSuggestion({}, 'Enter a prompt before requesting a theme.');
+      return;
+    }
+
+    this.suggestedTheme = null;
+    this.suggestThemeBtn.disabled = true;
+    const originalText = this.suggestThemeBtn.textContent;
+    this.suggestThemeBtn.textContent = 'Suggesting...';
+    if (this.applyThemeBtn) this.applyThemeBtn.disabled = true;
+    if (this.aiSuggestionEl) {
+      this.aiSuggestionEl.textContent = 'Loading theme suggestion...';
+    }
+
+    try {
+      const theme = await generateAITheme(prompt);
+      if (!theme || typeof theme !== 'object' || Array.isArray(theme)) {
+        throw new Error('The theme response was invalid.');
+      }
+      this.suggestedTheme = theme;
+      this._renderThemeSuggestion(theme);
+    } catch (error) {
+      this.suggestedTheme = null;
+      this._renderThemeSuggestion({}, error?.message || 'Unable to load a theme suggestion.');
+    } finally {
+      this.suggestThemeBtn.disabled = false;
+      this.suggestThemeBtn.textContent = originalText;
+    }
+  }
+
+  async applySuggestedTheme() {
+    if (!this.suggestedTheme) return;
+
+    const styles = this._getApplicableThemeStyles(this.suggestedTheme);
+    if (!Object.keys(styles).length) {
+      this._renderThemeSuggestion(this.suggestedTheme, 'No supported styling options are available to apply.');
+      return;
+    }
+
+    const controls = {
+      foreground: this.fgColorEl,
+      background: this.bgColorEl,
+      gradient: this.gradientEl,
+      dotStyle: this.dotStyleEl,
+      eyeStyle: this.eyeStyleEl,
+      margin: this.marginEl,
+      ecc: this.eccEl,
+    };
+    Object.entries(styles).forEach(([key, value]) => {
+      if (controls[key]) controls[key].value = value;
+    });
+    if (styles.ecc) this.explicitEcc = true;
+
+    try {
+      await this.generate();
+      this._renderThemeSuggestion(this.suggestedTheme, 'Theme applied to the QR preview.');
+    } catch (error) {
+      this._renderThemeSuggestion(this.suggestedTheme, error?.message || 'Unable to apply this theme.');
+    }
+  }
+
   async _handleLogoUpload(e) {
     const file = e.target.files && e.target.files[0];
     console.log('Logo file selected:', file);
     if (!file) {
       this.logoDataUrl = null;
+      if (this.logoPreviewEl) this.logoPreviewEl.textContent = 'No logo uploaded';
       this._debounceGenerate();
       return;
     }
@@ -226,6 +390,7 @@ class QRGenerator {
     if (file.type && !file.type.startsWith('image/')) {
       console.warn('Uploaded file is not an image; logo will be skipped.');
       this.logoDataUrl = null;
+      if (this.logoPreviewEl) this.logoPreviewEl.textContent = 'No logo uploaded';
       this._debounceGenerate();
       return;
     }
@@ -239,16 +404,19 @@ class QRGenerator {
       if (typeof nextDataUrl === 'string' && nextDataUrl.startsWith('data:image/')) {
         try {
           this.logoDataUrl = await this._prepareLogoDataUrl(nextDataUrl, Number((this.sizeEl && this.sizeEl.value) || this.size) || this.size);
+          if (this.logoPreviewEl) this.logoPreviewEl.textContent = file.name;
           console.log('logoDataUrl assigned');
           this._debounceGenerate();
         } catch (error) {
           console.warn('Could not process uploaded logo:', error);
           this.logoDataUrl = null;
+          if (this.logoPreviewEl) this.logoPreviewEl.textContent = 'No logo uploaded';
           this._debounceGenerate();
         }
       } else {
         console.warn('Uploaded logo did not produce a usable data URL; image will be skipped.');
         this.logoDataUrl = null;
+        if (this.logoPreviewEl) this.logoPreviewEl.textContent = 'No logo uploaded';
         this._debounceGenerate();
       }
     };

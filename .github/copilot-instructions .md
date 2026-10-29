@@ -233,15 +233,21 @@ Generate
 
 FastAPI APIs
 
+POST /ai/generate
+
 POST /ai/theme
 
 POST /ai/content
 
-POST /validator/url
+POST /ai/improve
+
+POST /ai/explain
+
+POST /validator/
 
 POST /analysis/quality
 
-POST /download
+POST /download/
 
 History
 

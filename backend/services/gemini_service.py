@@ -38,7 +38,11 @@ from backend.prompts.qr_prompt import (
 
 logger = logging.getLogger(__name__)
 
-load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "..", ".env"))
+_service_dir = os.path.dirname(os.path.abspath(__file__))
+_backend_dir = os.path.dirname(_service_dir)
+_project_root = os.path.dirname(_backend_dir)
+load_dotenv(dotenv_path=os.path.join(_backend_dir, ".env"))
+load_dotenv(dotenv_path=os.path.join(_project_root, ".env"))
 
 DEFAULT_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
 DEFAULT_TEMPERATURE = float(os.getenv("GEMINI_TEMPERATURE", "0.4"))
@@ -187,7 +191,7 @@ class GeminiService:
         async_client = getattr(self._client, "aio", None)
         async_models = getattr(async_client, "models", None) if async_client is not None else None
         async_generate_content = getattr(async_models, "generate_content", None)
-        if callable(async_generate_content):
+        if callable(async_generate_content) and inspect.iscoroutinefunction(async_generate_content):
             return await async_generate_content(**request_kwargs)
 
         return await asyncio.to_thread(

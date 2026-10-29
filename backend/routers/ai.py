@@ -4,6 +4,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
+from backend.services.ai_service import generate_content as generate_content_service
 from backend.services.gemini_service import (
     GeminiConfigurationError,
     GeminiService,
@@ -36,6 +37,13 @@ class ThemeRequest(BaseModel):
     prompt: str = Field(min_length=1)
 
 
+class ContentRequest(BaseModel):
+    """Request payload for generated QR copy."""
+
+    prompt: str = Field(min_length=1)
+    type: str = "default"
+
+
 class ImproveRequest(BaseModel):
     """Request payload for QR improvement suggestions."""
 
@@ -62,6 +70,16 @@ def _get_gemini_service() -> GeminiService:
         return GeminiService()
     except GeminiConfigurationError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.post("/content")
+async def content(payload: ContentRequest) -> dict[str, Any]:
+    """Generate QR copy using the existing content service."""
+    try:
+        return await generate_content_service(payload.prompt, payload.type)
+    except Exception as exc:
+        logger.exception("Unexpected error while generating QR content")
+        raise HTTPException(status_code=500, detail="Unexpected server error") from exc
 
 
 @router.post("/generate", response_model=AIResponse)
